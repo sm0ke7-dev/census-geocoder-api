@@ -46,7 +46,7 @@
 ### How to run
 - Put City in column A and 2-letter State in column B starting at row 2.
 - Reload the Sheet and use: Census Tools → Geocode & Fetch Population.
-- Results: C=Latitude, D=Longitude, E=Population (ACS 5-year).
+- Results: C=Latitude, D=Longitude, E=Population (ACS 5-year), F=Median Household Income (ACS `B19013_001E`).
 
 ### Where to look when debugging
 - Apps Script: View → Logs, or Executions → latest run.
@@ -94,3 +94,16 @@
 - Consider a lightweight alias map for known local variants (Cinco Ranch, Atascocita) to their CDP names if TIGERweb uses slightly different forms.
 - Optional: add an input County column to improve precision where multiple candidates exist.
 - After stable, add ACS median household income (`B19013_001E`) to write-out.
+ 
+---
+
+### Median income added + range fix (latest)
+- Change: Added ACS median household income `B19013_001E` to the same ACS call used for population.
+- Output: Now writing four columns per row → `C: lat`, `D: lng`, `E: population (B01003_001E)`, `F: median income (B19013_001E)`.
+- Error encountered: "The number of columns in the data does not match the number of columns in the range. The data has 4 but the range has 3." Cause: sheet write range was `C:E` (3 cols) while data had 4 values.
+- Fix: Updated write range to `C:F` by changing `sheet.getRange(2, 3, output.length, 3)` → `sheet.getRange(2, 3, output.length, 4)`.
+- Result: Run succeeded; income values populated (e.g., Sugar Land ≈ 137,511; Bellaire ≈ 236,311). Logs show both Population and Income per row.
+
+#### Next
+- Consider alias normalization for CDPs/unincorporated (e.g., "Sienna" for "Sienna Plantation", strip leading "The ").
+- Optional county hint column to disambiguate.

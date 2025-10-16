@@ -32,7 +32,7 @@ function runGeocodeAndPopulation() {
 
     if (!city && !state) {
       Logger.log('[ROW %s] Empty row; skipping.', i + 2);
-      output.push(['', '', '']);
+      output.push(['', '', '', '']);
       continue;
     }
 
@@ -43,7 +43,7 @@ function runGeocodeAndPopulation() {
       if (!geocode) {
         Logger.log('[ROW %s] Geocode returned no result', i + 2);
         failures++;
-        output.push(['', '', '']);
+        output.push(['', '', '', '']);
         continue;
       }
 
@@ -51,30 +51,37 @@ function runGeocodeAndPopulation() {
       Logger.log('[ROW %s] Geocode raw lat=%s lng=%s stateFips=%s place=%s', i + 2, latitude, longitude, stateFips, placeCode);
 
       let population = '';
+      let income = '';
       if (stateFips && placeCode) {
-        population = fetchPopulationAcs(stateFips, placeCode) || '';
-        Logger.log('[ROW %s] Population=%s', i + 2, population);
+        const acsData = fetchPopulationAcs(stateFips, placeCode);
+        if (acsData && typeof acsData === 'object') {
+          population = acsData.population || '';
+          income = acsData.income || '';
+        } else {
+          population = acsData || '';
+        }
+        Logger.log('[ROW %s] Population=%s Income=%s', i + 2, population, income);
       } else {
-        Logger.log('[ROW %s] Missing stateFips/placeCode; skipping population lookup', i + 2);
+        Logger.log('[ROW %s] Missing stateFips/placeCode; skipping ACS lookup', i + 2);
       }
 
       // Convert coordinates if they look like Web Mercator meters
       const { lat: wgsLat, lng: wgsLng } = toWgs84IfNeeded(longitude, latitude);
       Logger.log('[ROW %s] Writing WGS84 lat=%s lng=%s', i + 2, wgsLat, wgsLng);
 
-      output.push([wgsLat, wgsLng, population]);
+      output.push([wgsLat, wgsLng, population, income]);
       successes++;
 
       Utilities.sleep(120);
     } catch (err) {
       Logger.log('[ROW %s] ERROR: %s', i + 2, err && err.message ? err.message : String(err));
-      output.push(['', '', '']);
+      output.push(['', '', '', '']);
       failures++;
     }
   }
 
   if (output.length > 0) {
-    sheet.getRange(2, 3, output.length, 3).setValues(output);
+    sheet.getRange(2, 3, output.length, 4).setValues(output);
   }
 
   const summary = `Done. Processed ${processed}. Success ${successes}. Fail ${failures}.`;
@@ -373,7 +380,7 @@ function getGeographiesByCoordinates(lng, lat) {
 function fetchPopulationAcs(stateFips, placeCode) {
   const year = '2023';
   const base = `https://api.census.gov/data/${year}/acs/acs5`;
-  const params = `get=NAME,B01003_001E&for=place:${encodeURIComponent(placeCode)}&in=state:${encodeURIComponent(stateFips)}`;
+  const params = `get=NAME,B01003_001E,B19013_001E&for=place:${encodeURIComponent(placeCode)}&in=state:${encodeURIComponent(stateFips)}`;
   const url = `${base}?${params}`;
 
   Logger.log('[ACS] URL: %s', url);
@@ -396,15 +403,23 @@ function fetchPopulationAcs(stateFips, placeCode) {
   const headers = json[0];
   const rows = json.slice(1);
 
-  const valueIndex = headers.indexOf('B01003_001E');
-  if (valueIndex === -1) {
+  const popIndex = headers.indexOf('B01003_001E');
+  const incomeIndex = headers.indexOf('B19013_001E');
+  
+  if (popIndex === -1) {
     Logger.log('[ACS] B01003_001E not found in headers: %s', JSON.stringify(headers));
-    return '';
+    return { population: '', income: '' };
+  }
+  
+  if (incomeIndex === -1) {
+    Logger.log('[ACS] B19013_001E not found in headers: %s', JSON.stringify(headers));
+    return { population: '', income: '' };
   }
 
   const firstRow = rows[0];
-  const popValue = firstRow[valueIndex];
-  return popValue || '';
+  const popValue = firstRow[popIndex];
+  const incomeValue = firstRow[incomeIndex];
+  return { population: popValue || '', income: incomeValue || '' };
 }
 
 function safeSnippet(text) {
